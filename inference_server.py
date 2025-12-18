@@ -81,6 +81,7 @@ def worker_main(
 
     try:
         import numpy as np
+        import subprocess
         import torch
         from transformers import WhisperProcessor, WhisperForConditionalGeneration
         import librosa
@@ -164,7 +165,28 @@ def worker_main(
                 # Load audio (CPU)
                 # ---------------------
                 t0 = time.perf_counter()
-                audio_array, sr = librosa.load(audio_path, sr=16000, mono=True)
+                ext = os.path.splitext(audio_path)[1].lower()
+                if ext == ".webm":
+                    cmd = [
+                        "ffmpeg",
+                        "-hide_banner",
+                        "-loglevel", "error",
+                        "-i", audio_path,
+                        "-f", "f32le",
+                        "-ac", "1",
+                        "-ar", "16000",
+                        "pipe:1",
+                    ]
+                    proc = subprocess.run(cmd, capture_output=True, check=False)
+                    if proc.returncode != 0:
+                        raise RuntimeError(
+                            f"ffmpeg decode failed (rc={proc.returncode}): {proc.stderr.decode('utf-8', errors='replace')}"
+                        )
+                    audio_array = np.frombuffer(proc.stdout, dtype=np.float32)
+                    if audio_array.size == 0:
+                        raise RuntimeError("ffmpeg decode produced empty audio")
+                else:
+                    audio_array, _sr = librosa.load(audio_path, sr=16000, mono=True)
                 t_load = time.perf_counter()
 
                 # ---------------------
