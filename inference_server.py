@@ -154,6 +154,7 @@ def worker_main(
             request_id = request["request_id"]
             audio_path = request["audio_path"]
             context = request.get("context")
+            language = request.get("language")  # Optional: force specific language
             queued_at = request.get("queued_at", 0.0)
             server_start = request.get("server_start", queued_at)
 
@@ -196,13 +197,22 @@ def worker_main(
                 input_features = inputs.input_features.to(device, non_blocking=True)
                 t_preprocess = time.perf_counter()
 
-                # prompt_ids (optional)
+                # prompt_ids (optional context)
                 prompt_ids = None
                 if context is not None and context.strip():
-                    context_ids = processor.tokenizer.encode(context, add_special_tokens=False)
-                    if len(context_ids) > 0:
-                        # Shape (1, prompt_len) is safest for HF generate
-                        prompt_ids = torch.tensor([context_ids], device=device, dtype=torch.long)
+                    # get_prompt_ids properly prepends <|startofprev|> token
+                    prompt_ids = processor.get_prompt_ids(context, return_tensors="pt").to(device)
+
+                # forced_decoder_ids (optional language forcing)
+                # When language is specified, force the model to use that language
+                # instead of auto-detecting from audio
+                forced_decoder_ids = None
+                if language is not None and language.strip():
+                    # Returns list of (position, token_id) tuples like [(1, lang_id), (2, task_id)]
+                    forced_decoder_ids = processor.get_decoder_prompt_ids(
+                        language=language.strip().lower(),
+                        task="transcribe"
+                    )
 
                 # ---------------------
                 # Generate (GPU + CPU orchestration)
@@ -215,6 +225,8 @@ def worker_main(
                 }
                 if prompt_ids is not None:
                     generate_kwargs["prompt_ids"] = prompt_ids
+                if forced_decoder_ids is not None:
+                    generate_kwargs["forced_decoder_ids"] = forced_decoder_ids
 
                 torch.cuda.synchronize()
                 t_pre_generate = time.perf_counter()
@@ -463,10 +475,22 @@ async def ping():
     return {"status": "ok", "workers_alive": alive_workers, "workers_total": len(workers)}
 
 
-async def _run_transcription(audio_bytes: bytes, suffix: str, context: Optional[str]) -> Dict[str, Any]:
+async def _run_transcription(
+    audio_bytes: bytes,
+    suffix: str,
+    context: Optional[str],
+    language: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Shared request path for /transcribe and /invocations.
     Writes bytes to a temp file, enqueues to a GPU worker, and awaits the result.
+    
+    Args:
+        audio_bytes: Raw audio file bytes
+        suffix: File extension (.wav or .webm)
+        context: Optional context/prompt text for conditioning transcription
+        language: Optional language code (e.g., "en", "es", "zh") to force.
+                  If None, auto-detects language from audio.
     """
     if request_queue is None or response_queue is None:
         raise HTTPException(status_code=503, detail="Server not initialized yet")
@@ -499,6 +523,7 @@ async def _run_transcription(audio_bytes: bytes, suffix: str, context: Optional[
         "request_id": request_id,
         "audio_path": audio_path,
         "context": context,
+        "language": language,
         "queued_at": queued_at,
         "server_start": SERVER_START_TIME,
     }
@@ -546,6 +571,7 @@ async def _run_transcription(audio_bytes: bytes, suffix: str, context: Optional[
 async def transcribe(
     audio: UploadFile = File(..., description="Audio file (.wav or .webm)"),
     context: Optional[str] = Form(None, description="Optional context/prompt text"),
+    language: Optional[str] = Form(None, description="Optional language code (e.g., 'en', 'es', 'zh'). If not specified, auto-detects from audio."),
 ):
     # Validate extension
     filename = audio.filename or ""
@@ -553,7 +579,7 @@ async def transcribe(
         raise HTTPException(status_code=400, detail="Invalid file format. Only .wav or .webm supported.")
     suffix = ".wav" if filename.lower().endswith(".wav") else ".webm"
     audio_bytes = await audio.read()
-    response_data = await _run_transcription(audio_bytes=audio_bytes, suffix=suffix, context=context)
+    response_data = await _run_transcription(audio_bytes=audio_bytes, suffix=suffix, context=context, language=language)
     return JSONResponse(response_data)
 
 
@@ -567,8 +593,9 @@ async def invocations(request: Request):
       - JSON with base64 audio:
           {
             "audio_base64": "<base64>",
-            "audio_format": "wav" | "webm",   // optional
-            "context": "optional prompt"
+            "audio_format": "wav" | "webm",   // optional, defaults to "wav"
+            "context": "optional prompt",
+            "language": "en" | "es" | ...     // optional, auto-detects if not specified
           }
     """
     content_type = (request.headers.get("content-type") or "").lower()
@@ -597,8 +624,9 @@ async def invocations(request: Request):
             raise HTTPException(status_code=400, detail=f"Invalid base64 audio: {e}")
 
         context = payload.get("context")
+        language = payload.get("language")  # Optional language code
         suffix = ".wav" if audio_format == "wav" else ".webm"
-        return JSONResponse(await _run_transcription(audio_bytes=audio_bytes, suffix=suffix, context=context))
+        return JSONResponse(await _run_transcription(audio_bytes=audio_bytes, suffix=suffix, context=context, language=language))
 
     # Raw bytes payload
     audio_bytes = await request.body()
