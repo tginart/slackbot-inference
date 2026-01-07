@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dictation Recorder</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap");
+
+      :root {
+        color-scheme: dark;
+        --bg: #0b1114;
+        --bg-2: #0f1a1e;
+        --panel: rgba(15, 22, 26, 0.9);
+        --panel-solid: #101c21;
+        --surface: #0c1519;
+        --text: #e8f0ec;
+        --muted: #95a7a1;
+        --accent: #2fbda0;
+        --accent-strong: #1c8b74;
+        --accent-soft: #1a2c28;
+        --danger: #e36e5c;
+        --border: #203038;
+        --shadow: 0 28px 60px rgba(3, 7, 9, 0.6);
+        --radius: 18px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(1100px 520px at 10% -10%, rgba(47, 189, 160, 0.2) 0%, rgba(11, 17, 20, 0) 60%),
+          radial-gradient(900px 520px at 90% 0%, rgba(54, 92, 115, 0.2) 0%, rgba(11, 17, 20, 0) 55%),
+          linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 36px 20px 50px;
+      }
+
+      .frame {
+        width: min(980px, 100%);
+      }
+
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 22px;
+      }
+
+      header h1 {
+        font-size: clamp(28px, 3vw, 36px);
+        margin: 0 0 6px;
+        letter-spacing: -0.02em;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 520px;
+      }
+
+      .badge {
+        background: var(--panel-solid);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 26px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px;
+        backdrop-filter: blur(10px);
+        animation: fadeIn 400ms ease;
+      }
+
+      .tile {
+        background: var(--panel-solid);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 18px 18px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .tile.full {
+        grid-column: 1 / -1;
+      }
+
+      label {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        display: block;
+      }
+
+      input,
+      textarea,
+      select {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        padding: 10px 12px;
+        font: inherit;
+        background: var(--surface);
+        color: var(--text);
+      }
+
+      textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+
+      .row {
+        display: grid;
+        gap: 12px;
+      }
+
+      .row.inline {
+        grid-template-columns: 1.4fr 1fr;
+      }
+
+      .row.compact {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      button {
+        border: none;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+        box-shadow: none;
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: #06100d;
+        box-shadow: 0 12px 26px rgba(47, 189, 160, 0.3);
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        background: var(--accent-strong);
+      }
+
+      .btn-secondary {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+
+      .btn-secondary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 26px rgba(0, 0, 0, 0.35);
+      }
+
+      .record-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        justify-content: center;
+        font-size: 16px;
+      }
+
+      .record-dot {
+        width: 10px;
+        height: 10px;
+        background: #06100d;
+        border-radius: 50%;
+        box-shadow: inset 0 0 0 2px #06100d;
+      }
+
+      .recording .record-dot {
+        background: var(--danger);
+        box-shadow: 0 0 0 4px rgba(227, 110, 92, 0.2);
+      }
+
+      .status-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .status-pill {
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+      }
+
+      .status-pill[data-state="recording"] {
+        background: rgba(227, 110, 92, 0.18);
+        color: var(--danger);
+      }
+
+      .status-pill[data-state="uploading"] {
+        background: rgba(47, 189, 160, 0.18);
+        color: var(--accent-strong);
+      }
+
+      .status-pill[data-state="error"] {
+        background: rgba(227, 110, 92, 0.2);
+        color: var(--danger);
+      }
+
+      audio {
+        width: 100%;
+        border-radius: 12px;
+        background: var(--surface);
+      }
+
+      .output-box {
+        background: var(--surface);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        padding: 14px;
+        min-height: 140px;
+        white-space: pre-wrap;
+        line-height: 1.5;
+      }
+
+      .timing {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 16px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .timing span strong {
+        color: var(--text);
+      }
+
+      details {
+        border-radius: 12px;
+        border: 1px dashed var(--border);
+        padding: 10px 12px;
+        background: var(--surface);
+      }
+
+      details summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: var(--accent-strong);
+      }
+
+      .error {
+        color: var(--danger);
+        font-size: 13px;
+      }
+
+      .footer {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 860px) {
+        .panel {
+          grid-template-columns: 1fr;
+        }
+
+        header {
+          flex-direction: column;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .panel {
+          animation: none;
+        }
+
+        button {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <header>
+        <div>
+          <h1>Dictation Recorder</h1>
+          <p>Record a short dictation, then send it to your inference server for transcription.</p>
+        </div>
+        <div class="badge">Local tool</div>
+      </header>
+
+      <main class="panel">
+        <section class="tile">
+          <div class="row">
+            <label for="serverUrl">Server URL</label>
+            <input id="serverUrl" type="text" placeholder="http://localhost:8081" />
+            <div class="hint">UI server proxies /transcribe to localhost:8080.</div>
+          </div>
+
+          <div class="row">
+            <label for="context">Optional context</label>
+            <textarea id="context" placeholder="Add a prompt or domain context."></textarea>
+          </div>
+
+          <div class="row compact">
+            <div>
+              <label for="language">Language</label>
+              <input id="language" type="text" placeholder="auto" />
+            </div>
+            <div>
+              <label for="autoSend">Auto send</label>
+              <select id="autoSend">
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section class="tile">
+          <div class="row">
+            <label>Recorder</label>
+            <button id="recordBtn" class="btn-primary record-btn">
+              <span class="record-dot" aria-hidden="true"></span>
+              <span id="recordLabel">Start recording</span>
+            </button>
+            <div class="status-bar">
+              <div>
+                <div id="timer">00:00</div>
+                <div class="hint" id="fileInfo">No recording yet</div>
+              </div>
+              <div class="status-pill" id="statusPill" data-state="idle">Idle</div>
+            </div>
+            <audio id="playback" controls></audio>
+          </div>
+
+          <div class="row inline">
+            <button id="sendBtn" class="btn-secondary" disabled>Send to server</button>
+            <button id="clearBtn" class="btn-secondary">Clear</button>
+          </div>
+          <div class="error" id="error"></div>
+        </section>
+
+        <section class="tile full">
+          <div class="row">
+            <label>Transcription</label>
+            <div class="output-box" id="transcript">Waiting for a recording.</div>
+          </div>
+
+          <div class="row">
+            <label>Timing</label>
+            <div class="timing" id="timing"></div>
+            <details id="timelineDetails" hidden>
+              <summary>Timeline</summary>
+              <pre id="timeline"></pre>
+            </details>
+          </div>
+        </section>
+      </main>
+
+      <div class="footer">
+        Tip: Use Chrome or Edge for best audio recording support.
+      </div>
+    </div>
+
+    <script>
+      const elements = {
+        serverUrl: document.getElementById("serverUrl"),
+        context: document.getElementById("context"),
+        language: document.getElementById("language"),
+        autoSend: document.getElementById("autoSend"),
+        recordBtn: document.getElementById("recordBtn"),
+        recordLabel: document.getElementById("recordLabel"),
+        timer: document.getElementById("timer"),
+        fileInfo: document.getElementById("fileInfo"),
+        statusPill: document.getElementById("statusPill"),
+        playback: document.getElementById("playback"),
+        sendBtn: document.getElementById("sendBtn"),
+        clearBtn: document.getElementById("clearBtn"),
+        transcript: document.getElementById("transcript"),
+        timing: document.getElementById("timing"),
+        timelineDetails: document.getElementById("timelineDetails"),
+        timeline: document.getElementById("timeline"),
+        error: document.getElementById("error"),
+      };
+
+      const storageKey = "dictation-server-url";
+      const inferredOrigin =
+        window.location.origin && window.location.origin.startsWith("http")
+          ? window.location.origin
+          : "http://localhost:8080";
+      const defaultUrl = inferredOrigin;
+      const supportedMimeTypes = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+      ];
+
+      let mediaRecorder = null;
+      let mediaStream = null;
+      let audioChunks = [];
+      let audioBlob = null;
+      let audioUrl = null;
+      let timerInterval = null;
+      let recordStart = null;
+
+      function setStatus(state, label) {
+        elements.statusPill.dataset.state = state;
+        elements.statusPill.textContent = label;
+      }
+
+      function setError(message) {
+        elements.error.textContent = message || "";
+      }
+
+      function formatDuration(ms) {
+        const totalSeconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+        const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+        return `${minutes}:${seconds}`;
+      }
+
+      function formatBytes(bytes) {
+        if (!bytes) return "0 KB";
+        const kb = bytes / 1024;
+        if (kb < 1024) return `${kb.toFixed(1)} KB`;
+        return `${(kb / 1024).toFixed(2)} MB`;
+      }
+
+      function updateTimer() {
+        if (!recordStart) return;
+        const elapsed = Date.now() - recordStart;
+        elements.timer.textContent = formatDuration(elapsed);
+      }
+
+      function startTimer() {
+        recordStart = Date.now();
+        elements.timer.textContent = "00:00";
+        timerInterval = setInterval(updateTimer, 300);
+      }
+
+      function stopTimer() {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        recordStart = null;
+      }
+
+      function resetUI() {
+        audioBlob = null;
+        if (audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+          audioUrl = null;
+        }
+        elements.playback.removeAttribute("src");
+        elements.playback.load();
+        elements.fileInfo.textContent = "No recording yet";
+        elements.sendBtn.disabled = true;
+        elements.transcript.textContent = "Waiting for a recording.";
+        elements.timing.textContent = "";
+        elements.timelineDetails.hidden = true;
+        elements.timeline.textContent = "";
+        setError("");
+        setStatus("idle", "Idle");
+        elements.timer.textContent = "00:00";
+      }
+
+      function normalizeUrl(value) {
+        const trimmed = value.trim();
+        if (!trimmed) return defaultUrl;
+        const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed);
+        const withScheme = hasScheme ? trimmed : `http://${trimmed}`;
+        return withScheme.replace(/\/+$/, "");
+      }
+
+      function getSupportedMimeType() {
+        if (!window.MediaRecorder) return null;
+        for (const type of supportedMimeTypes) {
+          if (MediaRecorder.isTypeSupported(type)) {
+            return type;
+          }
+        }
+        return null;
+      }
+
+      function renderTiming(timing) {
+        if (!timing) {
+          elements.timing.textContent = "";
+          elements.timelineDetails.hidden = true;
+          elements.timeline.textContent = "";
+          return;
+        }
+
+        const formatMs = (value) => (value == null ? "n/a" : `${value} ms`);
+
+        const rows = [
+          ["Worker", timing.worker_id],
+          ["GPU", timing.gpu_id],
+          ["Queue", formatMs(timing.queue_wait_ms)],
+          ["Load", formatMs(timing.load_ms)],
+          ["Preprocess", formatMs(timing.preprocess_ms)],
+          ["Generate wall", formatMs(timing.generate_wall_ms)],
+          ["Generate gpu", formatMs(timing.generate_gpu_ms)],
+          ["Decode", formatMs(timing.decode_ms)],
+          ["Total worker", formatMs(timing.total_worker_ms)],
+          ["HTTP wait", formatMs(timing.http_wait_ms)],
+        ];
+
+        elements.timing.innerHTML = rows
+          .map(([label, value]) => `<span><strong>${label}:</strong> ${value ?? "n/a"}</span>`)
+          .join("");
+
+        if (timing.timeline) {
+          elements.timelineDetails.hidden = false;
+          elements.timeline.textContent = JSON.stringify(timing.timeline, null, 2);
+        } else {
+          elements.timelineDetails.hidden = true;
+          elements.timeline.textContent = "";
+        }
+      }
+
+      async function startRecording() {
+        setError("");
+        const mimeType = getSupportedMimeType();
+        if (!mimeType) {
+          setError("This browser does not support audio/webm recording.");
+          return;
+        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setError("Microphone access is not supported in this browser.");
+          return;
+        }
+
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err) {
+          setError("Microphone access was denied.");
+          return;
+        }
+
+        audioChunks = [];
+        audioBlob = null;
+        elements.sendBtn.disabled = true;
+        elements.transcript.textContent = "Recording...";
+        elements.timing.textContent = "";
+        elements.timelineDetails.hidden = true;
+        elements.timeline.textContent = "";
+        setStatus("recording", "Recording");
+
+        mediaRecorder = new MediaRecorder(mediaStream, { mimeType });
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunks.push(event.data);
+          }
+        };
+        mediaRecorder.onstop = () => {
+          audioBlob = new Blob(audioChunks, { type: mimeType });
+          audioChunks = [];
+          if (audioUrl) {
+            URL.revokeObjectURL(audioUrl);
+          }
+          audioUrl = URL.createObjectURL(audioBlob);
+          elements.playback.src = audioUrl;
+          elements.fileInfo.textContent = `Recorded ${formatBytes(audioBlob.size)}`;
+          elements.sendBtn.disabled = false;
+          setStatus("ready", "Ready");
+          elements.transcript.textContent = "Ready to send.";
+
+          if (elements.autoSend.value === "yes") {
+            uploadAudio();
+          }
+        };
+
+        mediaRecorder.start();
+        elements.recordBtn.classList.add("recording");
+        elements.recordLabel.textContent = "Stop recording";
+        startTimer();
+      }
+
+      function stopRecording() {
+        if (!mediaRecorder) return;
+        if (mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+        if (mediaStream) {
+          mediaStream.getTracks().forEach((track) => track.stop());
+        }
+        elements.recordBtn.classList.remove("recording");
+        elements.recordLabel.textContent = "Start recording";
+        stopTimer();
+      }
+
+      async function uploadAudio() {
+        if (!audioBlob) {
+          setError("Record audio before sending.");
+          return;
+        }
+
+        const baseUrl = normalizeUrl(elements.serverUrl.value || defaultUrl);
+        localStorage.setItem(storageKey, baseUrl);
+
+        const endpoint = `${baseUrl}/transcribe`;
+        const formData = new FormData();
+        formData.append("audio", audioBlob, `dictation-${Date.now()}.webm`);
+
+        const contextValue = elements.context.value.trim();
+        const languageValue = elements.language.value.trim();
+
+        if (contextValue) {
+          formData.append("context", contextValue);
+        }
+        if (languageValue) {
+          formData.append("language", languageValue);
+        }
+
+        setStatus("uploading", "Uploading");
+        setError("");
+        elements.sendBtn.disabled = true;
+        elements.recordBtn.disabled = true;
+
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            body: formData,
+          });
+
+          let payload = null;
+          const contentType = response.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            payload = await response.json();
+          }
+
+          if (!response.ok) {
+            const detail = payload && payload.detail ? payload.detail : `HTTP ${response.status}`;
+            throw new Error(detail);
+          }
+
+          if (!payload || !("transcription" in payload)) {
+            throw new Error("No transcription returned.");
+          }
+
+          elements.transcript.textContent = payload.transcription;
+          renderTiming(payload.timing);
+          setStatus("done", "Done");
+        } catch (err) {
+          setStatus("error", "Error");
+          setError(err.message || "Failed to upload.");
+          elements.transcript.textContent = "Upload failed.";
+          renderTiming(null);
+        } finally {
+          elements.sendBtn.disabled = false;
+          elements.recordBtn.disabled = false;
+        }
+      }
+
+      elements.recordBtn.addEventListener("click", () => {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          stopRecording();
+        } else {
+          startRecording();
+        }
+      });
+
+      elements.sendBtn.addEventListener("click", uploadAudio);
+      elements.clearBtn.addEventListener("click", resetUI);
+
+      const savedUrl = localStorage.getItem(storageKey) || defaultUrl;
+      elements.serverUrl.value = savedUrl;
+      resetUI();
+
+      const canRecord =
+        !!getSupportedMimeType() &&
+        !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      if (!canRecord) {
+        elements.recordBtn.disabled = true;
+        setStatus("error", "Unavailable");
+        setError("Audio recording is not supported in this browser.");
+      }
+    </script>
+  </body>
+</html>
