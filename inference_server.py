@@ -56,7 +56,8 @@ logger = logging.getLogger("whisper-server")
 # Configuration
 # ============================================================================
 
-MODEL_ID = "openai/whisper-large-v3-turbo"
+# Default to base model; can be overridden via --model-id or MODEL_ID env var
+MODEL_ID = os.environ.get("MODEL_ID", "openai/whisper-large-v3-turbo")
 MAX_QUEUE_SIZE = 10000
 REQUEST_TIMEOUT = 600  # seconds
 
@@ -72,9 +73,17 @@ def worker_main(
     gpu_id: int,
     request_queue: "mp.Queue",
     response_queue: "mp.Queue",
+    model_id: str,
 ):
     """
     Worker process that loads model on a specific GPU and processes requests.
+    
+    Args:
+        worker_id: Worker process ID
+        gpu_id: GPU device ID to use
+        request_queue: Queue for receiving requests
+        response_queue: Queue for sending responses
+        model_id: Model ID or checkpoint path to load
     """
     worker_logger = logging.getLogger(f"worker-{worker_id}")
     worker_logger.info(f"Starting worker {worker_id} on GPU {gpu_id}")
@@ -106,9 +115,9 @@ def worker_main(
             pass
 
         # Load model + processor
-        worker_logger.info(f"Loading model {MODEL_ID}...")
-        processor = WhisperProcessor.from_pretrained(MODEL_ID)
-        model = WhisperForConditionalGeneration.from_pretrained(MODEL_ID, torch_dtype=dtype)
+        worker_logger.info(f"Loading model from: {model_id}")
+        processor = WhisperProcessor.from_pretrained(model_id)
+        model = WhisperForConditionalGeneration.from_pretrained(model_id, torch_dtype=dtype)
         model.config.forced_decoder_ids = None
         model.to(device)
         model.eval()
@@ -377,6 +386,7 @@ async def startup_event():
     global ctx, request_queue, response_queue, workers, response_thread
 
     num_workers = int(os.environ.get("NUM_WORKERS", "8"))
+    model_id = os.environ.get("MODEL_ID", MODEL_ID)
 
     # Use a dedicated spawn context (works well with CUDA)
     ctx = mp.get_context("spawn")
@@ -393,6 +403,7 @@ async def startup_event():
 
     num_workers = min(num_workers, num_gpus)
     logger.info(f"Starting {num_workers} workers on {num_gpus} GPUs")
+    logger.info(f"Using model: {model_id}")
 
     request_queue = ctx.Queue(maxsize=MAX_QUEUE_SIZE)
     response_queue = ctx.Queue(maxsize=MAX_QUEUE_SIZE)
@@ -406,7 +417,7 @@ async def startup_event():
         gpu_id = i % num_gpus
         p = ctx.Process(
             target=worker_main,
-            args=(i, gpu_id, request_queue, response_queue),
+            args=(i, gpu_id, request_queue, response_queue, model_id),
             daemon=True,
         )
         p.start()
@@ -652,13 +663,16 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8080")), help="Server port")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Server host")
     parser.add_argument("--num-workers", type=int, default=8, help="Number of worker processes")
+    parser.add_argument("--model-id", type=str, default=MODEL_ID, help="Model ID or checkpoint path (default: openai/whisper-large-v3-turbo)")
     args = parser.parse_args()
 
     os.environ["NUM_WORKERS"] = str(args.num_workers)
     os.environ["PORT"] = str(args.port)
+    os.environ["MODEL_ID"] = args.model_id
 
     logger.info(f"Starting Whisper Inference Server on {args.host}:{args.port}")
     logger.info(f"Configured for {args.num_workers} workers")
+    logger.info(f"Model: {args.model_id}")
 
     # NOTE: Do NOT run uvicorn with multiple server workers for this design.
     # Use a single FastAPI/uvicorn process that spawns GPU workers itself.
